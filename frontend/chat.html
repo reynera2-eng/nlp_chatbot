@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Becks Chatbot</title>
+    <style>
+        body {
+            font-family: Arial;
+            background: #f0f2f5;
+        }
+
+        #chat-container {
+            width: 400px;
+            margin: 50px auto;
+            background: white;
+            border-radius: 10px;
+            padding: 10px;
+        }
+
+        #chatbox {
+            height: 400px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .user {
+            text-align: right;
+            margin: 5px;
+            color: blue;
+        }
+
+        .bot {
+            text-align: left;
+            margin: 5px;
+            color: green;
+        }
+
+        input {
+            width: 75%;
+            padding: 10px;
+        }
+
+        button {
+            width: 20%;
+            padding: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="chat-container">
+        <h3>🤖 Becks Chatbot</h3>
+
+        <div id="chatbox"></div>
+
+        <input type="text" id="input" placeholder="Ketik pesan..." onkeypress="handleKeyPress(event)" />
+        <button onclick="sendMessage()" id="sendBtn">Kirim</button>
+    </div>
+
+    <script>
+        function handleKeyPress(event) {
+            if (event.key === "Enter") {
+                sendMessage();
+            }
+        }
+
+        async function sendMessage() {
+            let input = document.getElementById("input");
+            let sendBtn = document.getElementById("sendBtn");
+            let message = input.value.trim();
+
+            if (!message) return;
+
+            let chatbox = document.getElementById("chatbox");
+
+            // tampilkan user
+            chatbox.innerHTML += `<div class="user">${message}</div>`;
+
+            // kirim ke API FastAPI
+            input.value = "";
+            input.disabled = true;
+            sendBtn.disabled = true;
+
+            try {
+                const res = await fetch("http://127.0.0.1:8000/chatbot", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ message: message })
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+
+                const data = await res.json();
+
+                // tampilkan bot
+                let debugInfo = "";
+                if (data.intent) {
+                    debugInfo = `<br><small style="color: gray; font-size: 11px;">[Intent: ${data.intent} | Confidence: ${data.confidence}]</small>`;
+                }
+                chatbox.innerHTML += `<div class="bot">${data.message}${debugInfo}</div>`;
+            } catch (error) {
+                console.error("Error connecting to chatbot API:", error);
+                chatbox.innerHTML += `<div class="bot" style="color: red;">Maaf, gagal terhubung ke server. Pastikan backend sudah berjalan.</div>`;
+            } finally {
+                input.disabled = false;
+                sendBtn.disabled = false;
+                input.focus();
+                chatbox.scrollTop = chatbox.scrollHeight;
+            }
+        }
+    </script>
+
+</body>
+
+</html>
