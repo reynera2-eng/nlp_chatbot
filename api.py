@@ -41,6 +41,7 @@ app.add_middleware(
 
 class ChatRequest(BaseModel):
     message: str
+    user_id: str = "default_user"
 
 # 🔹 Response default
 RESPONSES = {
@@ -92,6 +93,46 @@ def chatbot(req: ChatRequest):
             "message": "Model Machine Learning belum dilatih. Silakan jalankan train.py."
         }
 
+    user_id = req.user_id
+    state = sessions.get(user_id, "chatbot")
+    msg_lower = req.message.lower().strip()
+
+    # 1. Reset ke Chatbot
+    if msg_lower in ["selesai", "kembali ke bot"]:
+        sessions[user_id] = "chatbot"
+        return {
+            "status": "continue",
+            "message": "Anda telah kembali ke bot. Silakan tanyakan hal lain 😊"
+        }
+
+    # 2. Behavior Setelah Handover (Admin Mode)
+    if state == "admin":
+        return {
+            "status": "admin_mode",
+            "message": "Admin: Terima kasih, kami akan membantu Anda."
+        }
+
+    # 3. Handling Jawaban User (State offer_admin)
+    if state == "offer_admin":
+        if msg_lower == "ya":
+            sessions[user_id] = "admin"
+            return {
+                "status": "handover",
+                "message": "Anda sekarang terhubung dengan admin.",
+                "handover": True
+            }
+        elif msg_lower == "tidak":
+            sessions[user_id] = "chatbot"
+            return {
+                "status": "continue",
+                "message": "Baik, silakan tanyakan hal lain 😊"
+            }
+        else:
+            return {
+                "status": "waiting_confirmation",
+                "message": "Silakan jawab 'Ya' atau 'Tidak'."
+            }
+
     # 1. Clean Text
     cleaned_text = clean_text(req.message)
     
@@ -105,16 +146,18 @@ def chatbot(req: ChatRequest):
     
     # 4. Fallback threshold
     if max_prob < 0.12:
+        sessions[user_id] = "offer_admin"
         return {
             "status": "fallback",
             "intent": "unknown",
             "confidence": round(float(max_prob), 2),
-            "message": "Maaf, saya belum memahami. Anda bisa tanya tentang pesanan, pembayaran, pengiriman, atau fitur Jersey Customizer (warna, motif, nama, logo, dll)."
+            "message": "Maaf saya belum memahami pertanyaan Anda. Apakah Anda ingin terhubung dengan admin?",
+            "options": ["Ya", "Tidak"]
         }
 
     return {
         "status": "success",
-        "intent": intent,
+        "intent": str(intent),
         "confidence": round(float(max_prob), 2),
-        "message": RESPONSES.get(intent, "Silakan hubungi admin.")
+        "message": RESPONSES.get(str(intent), "Silakan hubungi admin.")
     }
