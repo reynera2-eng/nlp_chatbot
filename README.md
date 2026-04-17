@@ -40,8 +40,8 @@ nlp_chatbot/
 ├── train.py              # Training model NLP
 ├── model/                # File model & vectorizer
 ├── data/                 # Dataset intents
-├── frontend/
-│   └── chat.html         # UI chatbot sederhana
+├── tests/
+│   └── test_chat_ui.html # UI chatbot sederhana untuk testing
 ├── requirements.txt      # Dependency Python
 ```
 
@@ -98,13 +98,12 @@ http://localhost:8000/docs
 
 ---
 
-### 6. Jalankan Tampilan Chat
+## 🧪 Testing UI
 
-Buka file berikut di browser:
+Gunakan file:
+tests/test_chat_ui.html
 
-```
-frontend/chat.html
-```
+Untuk mencoba chatbot secara langsung tanpa integrasi frontend.
 
 ---
 

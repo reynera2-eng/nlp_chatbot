@@ -59,9 +59,43 @@
     </div>
 
     <script>
+        let inactivityTimer;
+
+        function resetTimer() {
+            clearTimeout(inactivityTimer);
+            // Set for 10 minutes = 10 * 60 * 1000 = 600000 ms
+            inactivityTimer = setTimeout(() => {
+                sendHiddenMessage("_session_timeout_");
+            }, 600000);
+        }
+
+        // Mulai timer saat awal muat
+        window.onload = resetTimer;
+
         function handleKeyPress(event) {
             if (event.key === "Enter") {
                 sendMessage();
+            }
+        }
+
+        async function sendHiddenMessage(hiddenMessage) {
+            let chatbox = document.getElementById("chatbox");
+            try {
+                const res = await fetch("http://127.0.0.1:8000/chatbot", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ message: hiddenMessage })
+                });
+
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                
+                const data = await res.json();
+                chatbox.innerHTML += `<div class="bot" style="color: dimgray; font-style: italic;">${data.message}</div>`;
+                chatbox.scrollTop = chatbox.scrollHeight;
+            } catch (error) {
+                console.error("Timeout connection error:", error);
             }
         }
 
@@ -71,6 +105,9 @@
             let message = input.value.trim();
 
             if (!message) return;
+
+            // User berinteraksi, reset timer
+            resetTimer();
 
             let chatbox = document.getElementById("chatbox");
 

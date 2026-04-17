@@ -1,6 +1,8 @@
 import re
 import os
 import pickle
+import random
+from datetime import datetime
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -63,6 +65,43 @@ RESPONSES = {
 # 🔹 Session user
 sessions = {}
 
+greeting_keywords = [
+    "halo", "hai", "hi", "hello", "hey",
+    "pagi", "selamat pagi",
+    "siang", "selamat siang",
+    "sore", "selamat sore",
+    "malam", "selamat malam",
+    "permisi", "punten",
+    "bro", "sis"
+]
+
+islamic_greetings = [
+    "assalamualaikum",
+    "assalamu'alaikum",
+    "assalamu alaikum",
+    "asalamualaikum"
+]
+
+def get_greeting():
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        return "Selamat pagi"
+    elif 12 <= hour < 15:
+        return "Selamat siang"
+    elif 15 <= hour < 18:
+        return "Selamat sore"
+    else:
+        return "Selamat malam"
+
+def check_greeting_match(msg_lower):
+    for g in islamic_greetings:
+        if msg_lower.startswith(g) or msg_lower == g:
+            return "islamic"
+    for g in greeting_keywords:
+        if msg_lower.startswith(g + " ") or msg_lower == g:
+            return "general"
+    return None
+
 # 🔹 Dummy database
 ORDERS = {
     "INV001": "Sedang diproduksi",
@@ -94,70 +133,166 @@ def chatbot(req: ChatRequest):
         }
 
     user_id = req.user_id
-    state = sessions.get(user_id, "chatbot")
+    
+    # 0. Load & Init State
+    if user_id not in sessions or not isinstance(sessions[user_id], dict):
+        sessions[user_id] = {"state": "chatbot", "history": [], "greet_count": 0}
+        
+    state = sessions[user_id]["state"]
     msg_lower = req.message.lower().strip()
 
-    # 1. Reset ke Chatbot
-    if msg_lower in ["selesai", "kembali ke bot"]:
-        sessions[user_id] = "chatbot"
+    # Handling TIMEOUT (Request dari frontend timer)
+    if msg_lower == "_session_timeout_":
+        sessions[user_id] = {"state": "chatbot", "history": [], "greet_count": 0}
         return {
-            "status": "continue",
-            "message": "Anda telah kembali ke bot. Silakan tanyakan hal lain 😊"
+            "status": "timeout",
+            "message": "Sesi obrolan telah ditutup otomatis karena tidak ada interaksi selama 10 menit. Silakan kirim pesan baru jika Anda masih butuh bantuan."
         }
 
-    # 2. Behavior Setelah Handover (Admin Mode)
+    # Memory Tracking - Append user message
+    sessions[user_id]["history"].append({"role": "user", "message": req.message})
+    sessions[user_id]["history"] = sessions[user_id]["history"][-20:]
+
+    def send_response(data):
+        sessions[user_id]["history"].append({"role": "bot", "message": data.get("message", "")})
+        return data
+
+    # 1. Mengecek penyelesaian sesi (chatbot/admin)
+    if msg_lower in ["selesai", "kembali ke bot"]:
+        if state == "admin":
+            sessions[user_id]["state"] = "post_admin_offer"
+            return send_response({
+                "status": "waiting_confirmation",
+                "message": "Apakah ada hal lain yang saya dapat bantu?"
+            })
+        else:
+            sessions[user_id]["state"] = "chatbot"
+            sessions[user_id]["greet_count"] = 0
+            return send_response({
+                "status": "continue",
+                "message": "Senang membantu Anda. Jika ada hal lain yang perlu didiskusikan, silakan tanyakan kembali 😊"
+            })
+
+    # Handling state setelah chat dengan admin selesai
+    if state == "post_admin_offer":
+        if msg_lower == "ya":
+            sessions[user_id]["state"] = "chatbot"
+            return send_response({
+                "status": "success",
+                "message": "Apalagi yang bisa saya bantu?"
+            })
+        elif msg_lower == "tidak":
+            sessions[user_id]["state"] = "chatbot"
+            return send_response({
+                "status": "continue",
+                "message": "Senang membantu Anda. Jika ada hal lain yang perlu didiskusikan, silakan tanyakan kembali 😊"
+            })
+        else:
+            # Fluid: Jika bukan ya/tidak, anggap kembali ke chatbot dan lanjut ke logika berikutnya
+            sessions[user_id]["state"] = "chatbot"
+
+    # 2. Behavior Setelah Handover (Admin Mode) - AI tidak intervensi sama sekali
     if state == "admin":
-        return {
+        return send_response({
             "status": "admin_mode",
             "message": "Admin: Terima kasih, kami akan membantu Anda."
-        }
+        })
 
-    # 3. Handling Jawaban User (State offer_admin)
+    # 3. Prioritas Greeting
+    greet_type = check_greeting_match(msg_lower)
+    if greet_type:
+        sessions[user_id]["greet_count"] = sessions[user_id].get("greet_count", 0) + 1
+        
+        # Penanganan SPAM Greeting
+        if sessions[user_id]["greet_count"] > 1:
+            return send_response({
+                "status": "success",
+                "intent": "greeting",
+                "confidence": 1.0,
+                "message": "Halo! 😊 Langsung saja ketikkan pertanyaan atau hal yang ingin Anda diskusikan ya."
+            })
+            
+        # Greeting Normal
+        if greet_type == "islamic":
+            curr_time_greeting = get_greeting()
+            resp_choices = [
+                f"Waalaikumsalam, {curr_time_greeting}! 😊 Apa yang bisa saya bantu?",
+                f"Waalaikumsalam 🙏 {curr_time_greeting}! Ada yang bisa saya bantu?",
+                f"Waalaikumsalam 😊 {curr_time_greeting}! Silakan, ada yang ingin ditanyakan?"
+            ]
+            return send_response({
+                "status": "success",
+                "intent": "greeting",
+                "confidence": 1.0,
+                "message": random.choice(resp_choices)
+            })
+        elif greet_type == "general":
+            curr_time_greeting = get_greeting()
+            return send_response({
+                "status": "success",
+                "intent": "greeting",
+                "confidence": 1.0,
+                "message": f"{curr_time_greeting}! 😊 Apa yang bisa saya bantu?"
+            })
+    else:
+        # Reset greet_count jika user tanya hal lain
+        sessions[user_id]["greet_count"] = 0
+
+    # 3. Prioritas 3 (Part C): Handling Jawaban User (State offer_admin)
     if state == "offer_admin":
         if msg_lower == "ya":
-            sessions[user_id] = "admin"
-            return {
+            sessions[user_id]["state"] = "admin"
+            return send_response({
                 "status": "handover",
                 "message": "Anda sekarang terhubung dengan admin.",
                 "handover": True
-            }
+            })
         elif msg_lower == "tidak":
-            sessions[user_id] = "chatbot"
-            return {
+            sessions[user_id]["state"] = "chatbot"
+            return send_response({
                 "status": "continue",
                 "message": "Baik, silakan tanyakan hal lain 😊"
-            }
+            })
         else:
-            return {
-                "status": "waiting_confirmation",
-                "message": "Silakan jawab 'Ya' atau 'Tidak'."
-            }
+            # Fluid: Jika bukan ya/tidak, anggap kembali ke chatbot dan lanjut ke logika berikutnya
+            sessions[user_id]["state"] = "chatbot"
 
-    # 1. Clean Text
+    # 4. Clean Text
     cleaned_text = clean_text(req.message)
     
-    # 2. Vectorize
+    # 5. Vectorize
     vec_text = vectorizer.transform([cleaned_text])
     
-    # 3. Predict Intent & Confidence
+    # 6. Predict Intent & Confidence
     probs = ml_model.predict_proba(vec_text)[0]
     max_prob = max(probs)
     intent = ml_model.predict(vec_text)[0]
+
+    # Manual Override: Cek kata kunci handover secara eksplisit
+    handover_keywords = ["admin", "bicara admin", "hubungi admin", "panggil admin", "bantuan manusia"]
+    if any(k in msg_lower for k in handover_keywords):
+        sessions[user_id]["state"] = "offer_admin"
+        return send_response({
+            "status": "fallback",
+            "message": "Apakah Anda ingin terhubung dengan admin untuk bantuan lebih lanjut?",
+            "options": ["Ya", "Tidak"]
+        })
     
-    # 4. Fallback threshold
-    if max_prob < 0.12:
-        sessions[user_id] = "offer_admin"
-        return {
+    # 7. Fallback threshold (Disesuaikan kembali ke 0.15 agar intent normal terdeteksi)
+    if max_prob < 0.15:
+        sessions[user_id]["state"] = "offer_admin"
+        return send_response({
             "status": "fallback",
             "intent": "unknown",
             "confidence": round(float(max_prob), 2),
-            "message": "Maaf saya belum memahami pertanyaan Anda. Apakah Anda ingin terhubung dengan admin?",
+            "message": "Maaf saya belum memahami pertanyaan Anda sepenuhnya. Apakah Anda ingin terhubung dengan admin?",
             "options": ["Ya", "Tidak"]
-        }
+        })
 
-    return {
+    # Prioritas 5: NLP Intent
+    return send_response({
         "status": "success",
         "intent": str(intent),
         "confidence": round(float(max_prob), 2),
         "message": RESPONSES.get(str(intent), "Silakan hubungi admin.")
-    }
+    })
