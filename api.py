@@ -5,6 +5,8 @@ import random
 from datetime import datetime
 from fastapi import FastAPI
 from pydantic import BaseModel
+import json
+import subprocess
 
 # 🔹 Load ML Model & Vectorizer
 MODEL_PATH = "model/chatbot_model.pkl"
@@ -45,22 +47,31 @@ class ChatRequest(BaseModel):
     message: str
     user_id: str = "default_user"
 
-# 🔹 Response default
-RESPONSES = {
-    "cek_status": "Silakan masukkan nomor invoice Anda.",
-    "cara_pesan": "Anda dapat memesan jersey melalui menu Custom Jersey.",
-    "pengiriman": "Estimasi pengiriman adalah 3–5 hari kerja.",
-    "pembayaran": "Kami mendukung pembayaran melalui QRIS dan transfer bank.",
-    "mockup_jersey": "Jersey Customizer menyediakan pilihan model:​ V-Neck, O-Neck, dan tipe Kombinasi. Setiap model dirancang untuk visual 2.5D yang mendalam.",
-    "pewarnaan_jersey": "Anda dapat mengubah warna setiap bagian jersey secara spesifik: badan, lengan kanan, lengan kiri, kerah, sabuk, dan lainnya. Setiap bagian memiliki kontrol warna independen.",
-    "motif_pattern": "Motif/Pattern dapat diterapkan dengan kontrol penuh terhadap skala, sudut rotasi, dan pencerminan (flip). Anda bisa mengatur ukuran, memutar, dan merefleksikan motif sesuai kebutuhan.",
-    "nama_nomor_logo": "Anda dapat menambahkan Nama dan Nomor punggung dengan warna yang bisa disesuaikan. Logo kustom juga bisa diupload dan diposisikan sesuai keinginan dengan kontrol penuh.",
-    "view_tampilan": "Pengaturan desain (warna, motif, dll) dipisahkan secara independen untuk tiga view: Depan, Belakang, dan Celana. Setiap view bisa memiliki desain yang berbeda.",
-    "undo_redo": "Jersey Customizer memiliki fitur History System dengan Undo & Redo. Tekan Ctrl+Z untuk membatalkan langkah terakhir dan Ctrl+Shift+Z untuk mengulang.",
-    "flip_cermin": "Anda dapat mencerminkan logo atau motif dengan fitur Flip Horizontal/Vertical hanya dengan satu klik untuk kemudahan desain.",
-    "toolbar_kontrol": "Interactive Toolbar yang melayang memberikan akses cepat ke fitur duplikasi, hapus, dan flip pada objek yang dipilih.",
-    "simpan_Download": "Desain Anda dapat disimpan dan didownload dalam format yang didukung. Hubungi admin untuk informasi format file yang tersedia."
-}
+# 🔹 Load Responses from JSON
+RESPONSES_PATH = "data/responses.json"
+INTENTS_PATH = "data/intents.json"
+
+def load_responses():
+    if os.path.exists(RESPONSES_PATH):
+        with open(RESPONSES_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_responses(data):
+    with open(RESPONSES_PATH, "w") as f:
+        json.dump(data, f, indent=4)
+
+def load_intents():
+    if os.path.exists(INTENTS_PATH):
+        with open(INTENTS_PATH, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_intents(data):
+    with open(INTENTS_PATH, "w") as f:
+        json.dump(data, f, indent=4)
+
+RESPONSES = load_responses()
 
 # 🔹 Session user
 sessions = {}
@@ -157,45 +168,47 @@ def chatbot(req: ChatRequest):
         sessions[user_id]["history"].append({"role": "bot", "message": data.get("message", "")})
         return data
 
-    # 1. Mengecek penyelesaian sesi (chatbot/admin)
-    if msg_lower in ["selesai", "kembali ke bot"]:
-        if state == "admin":
-            sessions[user_id]["state"] = "post_admin_offer"
-            return send_response({
-                "status": "waiting_confirmation",
-                "message": "Apakah ada hal lain yang saya dapat bantu?"
-            })
-        else:
-            sessions[user_id]["state"] = "chatbot"
-            sessions[user_id]["greet_count"] = 0
-            return send_response({
-                "status": "continue",
-                "message": "Senang membantu Anda. Jika ada hal lain yang perlu didiskusikan, silakan tanyakan kembali 😊"
-            })
+    # 1. State: Handover Berakhir (Post-Admin)
+    # Jika Laravel memanggil API sementara di FastAPI masih 'admin', 
+    # berarti admin baru saja menekan 'Akhiri Chat'.
+    if state == "admin":
+        sessions[user_id]["state"] = "post_admin_offer"
+        state = "post_admin_offer"
 
-    # Handling state setelah chat dengan admin selesai
+    # Handling Jawaban untuk "Ada lagi yang bisa kami bantu?"
     if state == "post_admin_offer":
-        if msg_lower == "ya":
+        if msg_lower in ["ya", "yes", "boleh", "ada"]:
             sessions[user_id]["state"] = "chatbot"
             return send_response({
                 "status": "success",
-                "message": "Apalagi yang bisa saya bantu?"
+                "message": "Apalagi yang dapat kami bantu? 😊"
             })
-        elif msg_lower == "tidak":
+        elif msg_lower in ["tidak", "no", "enggak", "selesai", "sudah", "cukup"]:
             sessions[user_id]["state"] = "chatbot"
             return send_response({
                 "status": "continue",
-                "message": "Senang membantu Anda. Jika ada hal lain yang perlu didiskusikan, silakan tanyakan kembali 😊"
+                "message": "Baik, senang bisa membantu Anda. Jika ada hal lain yang perlu didiskusikan, silakan tanyakan kembali. Selamat beraktivitas! 😊"
             })
         else:
-            # Fluid: Jika bukan ya/tidak, anggap kembali ke chatbot dan lanjut ke logika berikutnya
+            # Fluid: Jika user langsung tanya hal lain (cek status, dll), 
+            # pindahkan state ke chatbot dan biarkan logika NLP di bawah yang menangani.
             sessions[user_id]["state"] = "chatbot"
+            state = "chatbot"
 
-    # 2. Behavior Setelah Handover (Admin Mode) - AI tidak intervensi sama sekali
+    # 2. Behavior Setelah Handover (Admin Mode) - AI tidak intervensi, biarkan Laravel yang menangani
     if state == "admin":
-        return send_response({
+        return {
             "status": "admin_mode",
-            "message": "Admin: Terima kasih, kami akan membantu Anda."
+            "message": "" # Kosongkan agar tidak ada balasan dummy
+        }
+
+    # 2.5 Intercept Global Exit Keywords (Mencegah Loop Fallback)
+    exit_keywords = ["selesai", "cukup", "sudah", "tidak ada", "tidak jadi", "terima kasih", "makasih", "thanks", "tutup"]
+    if any(key in msg_lower for key in exit_keywords) and len(msg_lower.split()) <= 3:
+        sessions[user_id]["state"] = "chatbot"
+        return send_response({
+            "status": "continue",
+            "message": "Baik, terima kasih! 😊 Senang bisa membantu Anda. Jika butuh bantuan lagi di lain waktu, silakan hubungi asisten Becks kembali. Selamat beraktivitas!"
         })
 
     # 3. Prioritas Greeting
@@ -296,3 +309,75 @@ def chatbot(req: ChatRequest):
         "confidence": round(float(max_prob), 2),
         "message": RESPONSES.get(str(intent), "Silakan hubungi admin.")
     })
+
+# --- ADMIN ENDPOINTS ---
+
+class IntentUpdate(BaseModel):
+    intent: str
+    response: str
+    patterns: list[str]
+
+@app.get("/admin/intents")
+def get_all_intents():
+    intents = load_intents()
+    responses = load_responses()
+    combined = []
+    for intent, patterns in intents.items():
+        combined.append({
+            "intent": intent,
+            "patterns": patterns,
+            "response": responses.get(intent, "")
+        })
+    return combined
+
+@app.post("/admin/intents")
+def update_intent(data: IntentUpdate):
+    intents = load_intents()
+    responses = load_responses()
+    
+    intents[data.intent] = data.patterns
+    responses[data.intent] = data.response
+    
+    save_intents(intents)
+    save_responses(responses)
+    
+    # Reload local cache
+    global RESPONSES
+    RESPONSES = responses
+    
+    return {"status": "success", "message": f"Intent {data.intent} updated."}
+
+@app.delete("/admin/intents/{intent}")
+def delete_intent(intent: str):
+    intents = load_intents()
+    responses = load_responses()
+    
+    if intent in intents: del intents[intent]
+    if intent in responses: del responses[intent]
+    
+    save_intents(intents)
+    save_responses(responses)
+    
+    global RESPONSES
+    RESPONSES = responses
+    
+    return {"status": "success", "message": f"Intent {intent} deleted."}
+
+@app.post("/admin/retrain")
+def retrain_model():
+    try:
+        # Menjalankan train.py
+        result = subprocess.run(["python", "train.py"], capture_output=True, text=True)
+        if result.returncode == 0:
+            # Reload model
+            global ml_model, vectorizer
+            if os.path.exists(MODEL_PATH) and os.path.exists(VEC_PATH):
+                with open(MODEL_PATH, "rb") as f:
+                    ml_model = pickle.load(f)
+                with open(VEC_PATH, "rb") as f:
+                    vectorizer = pickle.load(f)
+            return {"status": "success", "message": "Model retrained successfully."}
+        else:
+            return {"status": "error", "message": result.stderr}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}

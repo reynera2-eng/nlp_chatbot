@@ -1,0 +1,15 @@
+{
+    "cek_status": "Silakan masukkan nomor invoice Anda.",
+    "cara_pesan": "Anda dapat memesan jersey melalui menu Custom Jersey.",
+    "pengiriman": "Estimasi pengiriman adalah 3–5 hari kerja.",
+    "pembayaran": "Kami mendukung pembayaran melalui QRIS dan transfer bank.",
+    "mockup_jersey": "Jersey Customizer menyediakan pilihan model:​ V-Neck, O-Neck, dan tipe Kombinasi. Setiap model dirancang untuk visual 2.5D yang mendalam.",
+    "pewarnaan_jersey": "Anda dapat mengubah warna setiap bagian jersey secara spesifik: badan, lengan kanan, lengan kiri, kerah, sabuk, dan lainnya. Setiap bagian memiliki kontrol warna independen.",
+    "motif_pattern": "Motif/Pattern dapat diterapkan dengan kontrol penuh terhadap skala, sudut rotasi, dan pencerminan (flip). Anda bisa mengatur ukuran, memutar, dan merefleksikan motif sesuai kebutuhan.",
+    "nama_nomor_logo": "Anda dapat menambahkan Nama dan Nomor punggung dengan warna yang bisa disesuaikan. Logo kustom juga bisa diupload dan diposisikan sesuai keinginan dengan kontrol penuh.",
+    "view_tampilan": "Pengaturan desain (warna, motif, dll) dipisahkan secara independen untuk tiga view: Depan, Belakang, dan Celana. Setiap view bisa memiliki desain yang berbeda.",
+    "undo_redo": "Jersey Customizer memiliki fitur History System dengan Undo & Redo. Tekan Ctrl+Z untuk membatalkan langkah terakhir dan Ctrl+Shift+Z untuk mengulang.",
+    "flip_cermin": "Anda dapat mencerminkan logo atau motif dengan fitur Flip Horizontal/Vertical hanya dengan satu klik untuk kemudahan desain.",
+    "toolbar_kontrol": "Interactive Toolbar yang melayang memberikan akses cepat ke fitur duplikasi, hapus, dan flip pada objek yang dipilih.",
+    "simpan_Download": "Desain Anda dapat disimpan dan didownload dalam format yang didukung. Hubungi admin untuk informasi format file yang tersedia."
+}
